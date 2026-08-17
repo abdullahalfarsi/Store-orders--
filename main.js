@@ -66,7 +66,16 @@ const OLD_STORAGE_KEY = 'purchase-orders-v1'; // مفتاح قديم (تجميع
 const ORDERS_INDEX_KEY = 'orders-index-v1';
 const orderKey = id => `order:${id}`;
 const ADMIN_USERNAME = 'Admin272200'; // اسم دخول مسؤول النظام (ثابت بالكود)
-const ADMIN_PASSWORD = '952002'; // كلمة سر مسؤول النظام (ثابتة بالكود)
+// بصمة SHA-256 لكلمة السر بدل كتابتها نص صريح — كلمة السر الأصلية غير موجودة بالملف
+const ADMIN_PASSWORD_HASH = '3856c7f6005829540300760b836ec05c04fd87f47e212550625e4e4de064f62b';
+
+async function sha256(text) {
+  const enc = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 const VIEWERS_KEY = 'app-viewers-v1'; // قائمة حسابات المشاهدة التي ينشئها المدير
 const SPLASH_MIN_MS = 5000;
 const IDLE_TIMEOUT_MS = 20000;
@@ -290,7 +299,8 @@ function OrdersLedger() {
     const uname = authForm.username.trim();
 
     if (authMode === 'admin') {
-      if (uname === ADMIN_USERNAME && authForm.password === ADMIN_PASSWORD) {
+      const enteredHash = await sha256(authForm.password);
+      if (uname === ADMIN_USERNAME && enteredHash === ADMIN_PASSWORD_HASH) {
         setAppStage('app');
         setCurrentRole('admin');
         setCanEditOrders(true);
