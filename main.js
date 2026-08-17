@@ -2079,8 +2079,8 @@ window.addEventListener('error', function (e) {
 // إعدادات Supabase — عدّل القيمتين التاليتين ببيانات مشروعك
 // (Supabase Dashboard → Project Settings → API)
 // =====================================================================================
-const SUPABASE_URL = "ضع_SUPABASE_URL_هنا";
-const SUPABASE_ANON_KEY = "ضع_SUPABASE_ANON_KEY_هنا";
+const SUPABASE_URL = "eubtjhnljtyokekpgpae";
+const SUPABASE_ANON_KEY = "sb_publishable_vjXlFzu9VTwkLQCIZsOs7A_tJ1wPpI7";
 // =====================================================================================
 
 const CONFIG_NOT_SET = SUPABASE_URL.indexOf('ضع_') !== -1 || SUPABASE_ANON_KEY.indexOf('ضع_') !== -1;
