@@ -69,6 +69,21 @@ const ADMIN_USERNAME = 'Admin272200'; // اسم دخول مسؤول النظام
 const ADMIN_PASSWORD = '952002'; // كلمة سر مسؤول النظام (ثابتة بالكود)
 const VIEWERS_KEY = 'app-viewers-v1'; // قائمة حسابات المشاهدة التي ينشئها المدير
 const SPLASH_MIN_MS = 5000;
+const IDLE_TIMEOUT_MS = 20000;
+const VERSE_INTERVAL_MS = 5000;
+
+const VERSES = [
+  { text: 'وَقُل رَّبِّ زِدْنِي عِلْمًا', ref: 'سورة طه، آية 114' },
+  { text: 'إِنَّ مَعَ الْعُسْرِ يُسْرًا', ref: 'سورة الشرح، آية 6' },
+  { text: 'وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا', ref: 'سورة الطلاق، آية 2' },
+  { text: 'حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ', ref: 'سورة آل عمران، آية 173' },
+  { text: 'فَاذْكُرُونِي أَذْكُرْكُمْ وَاشْكُرُوا لِي وَلَا تَكْفُرُونِ', ref: 'سورة البقرة، آية 152' },
+  { text: 'إِنَّ اللَّهَ مَعَ الصَّابِرِينَ', ref: 'سورة البقرة، آية 153' },
+  { text: 'لَا يُكَلِّفُ اللَّهُ نَفْسًا إِلَّا وُسْعَهَا', ref: 'سورة البقرة، آية 286' },
+  { text: 'وَبَشِّرِ الصَّابِرِينَ', ref: 'سورة البقرة، آية 155' },
+  { text: 'رَبِّ اشْرَحْ لِي صَدْرِي وَيَسِّرْ لِي أَمْرِي', ref: 'سورة طه، آية 25-26' },
+  { text: 'وَتَوَكَّلْ عَلَى اللَّهِ وَكَفَىٰ بِاللَّهِ وَكِيلًا', ref: 'سورة الأحزاب، آية 3' },
+];
 const MAX_ATTACH_BYTES = 700 * 1024; // ~700 كيلوبايت إجمالي لكل طلب (هامش أمان تحت حد قاعدة البيانات المشتركة)
 
 function uid() {
@@ -212,6 +227,7 @@ function OrdersLedger() {
   const [viewingOrder, setViewingOrder] = useState(null);
 
   const [appStage, setAppStage] = useState('splash'); // splash | login | app
+  const [idle, setIdle] = useState(false);
   const [authMode, setAuthMode] = useState('viewer'); // viewer | admin
   const [authForm, setAuthForm] = useState({ username: '', password: '' });
   const [authError, setAuthError] = useState('');
@@ -241,6 +257,23 @@ function OrdersLedger() {
     const t = setTimeout(() => setAppStage('login'), SPLASH_MIN_MS);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    if (appStage === 'splash') return;
+    let timer;
+    const resetTimer = () => {
+      setIdle(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setIdle(true), IDLE_TIMEOUT_MS);
+    };
+    const events = ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'keydown', 'wheel'];
+    events.forEach(ev => window.addEventListener(ev, resetTimer, { passive: true }));
+    resetTimer();
+    return () => {
+      clearTimeout(timer);
+      events.forEach(ev => window.removeEventListener(ev, resetTimer));
+    };
+  }, [appStage]);
 
   async function handleAuthSubmit(e) {
     e.preventDefault();
@@ -639,6 +672,18 @@ function OrdersLedger() {
           }
           .app-fade-in { animation: appFadeIn 0.5s ease both; }
 
+          @keyframes overlayFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          .idle-overlay { animation: overlayFadeIn 0.8s ease both; }
+
+          @keyframes verseIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.97); filter: blur(6px); }
+            to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+          }
+          .verse-in { animation: verseIn 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
         `}</style>
 
@@ -861,6 +906,8 @@ function OrdersLedger() {
         {reportsOpen && currentRole === 'admin' && (
           <ReportsModal orders={orders} onClose={() => setReportsOpen(false)} />
         )}
+
+        <IdleOverlay active={idle && appStage !== 'splash'} />
       </div>
     </div>
   );
@@ -1319,6 +1366,56 @@ function OrderRow({ order, index, highlighted, canEdit, onView, onEdit, onDelete
             <Trash2 size={15} />
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function IdleOverlay({ active }) {
+  const [verseIndex, setVerseIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setVerseIndex(0);
+      return;
+    }
+    const t = setInterval(() => setVerseIndex(i => (i + 1) % VERSES.length), VERSE_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [active]);
+
+  if (!active) return null;
+  const verse = VERSES[verseIndex];
+
+  return (
+    <div
+      className="idle-overlay"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 32,
+        textAlign: 'center',
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          background: 'rgba(4,8,14,0.6)',
+        }}
+      />
+      <div key={verseIndex} className="verse-in" style={{ position: 'relative', maxWidth: 560 }}>
+        <p
+          style={{ fontFamily: "'Cairo', sans-serif", color: TEXT, fontSize: 26, lineHeight: 1.9, fontWeight: 700 }}
+        >
+          {verse.text}
+        </p>
+        <p style={{ color: ACCENT, fontSize: 14, marginTop: 18, fontWeight: 600 }}>{verse.ref}</p>
       </div>
     </div>
   );
