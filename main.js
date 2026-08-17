@@ -88,6 +88,95 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} ميجابايت`;
 }
 
+// =====================================================================================
+// طبقة تخزين الطلبات (window.ordersAPI) — قابلة للاستبدال حسب بيئة التشغيل.
+// النسخة الافتراضية هنا تحفظ كل طلب كسجل مستقل داخل window.storage (مفتاح/قيمة)،
+// وهذا يناسب التشغيل داخل Claude أو أي نسخة بدون جدول علاقاتي حقيقي.
+// عند الربط بقاعدة بيانات حقيقية (مثل Supabase) بجدول "orders" مخصص، يتم استبدال
+// window.ordersAPI بالكامل بنسخة تتعامل مباشرة مع صفوف الجدول (راجع سكربت الإقلاع).
+// =====================================================================================
+if (!window.ordersAPI) {
+  window.ordersAPI = {
+    async list() {
+      if (!window.storage || typeof window.storage.get !== 'function') return [];
+
+      let ids = [];
+      try {
+        const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
+        if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
+      } catch (e) {
+        // لا يوجد فهرس بعد
+      }
+
+      if (ids.length === 0) {
+        // محاولة ترحيل البيانات من التنسيق القديم (مفتاح واحد يحوي كل الطلبات)
+        try {
+          const oldRes = await withTimeout(window.storage.get(OLD_STORAGE_KEY, false), 4000);
+          if (oldRes && oldRes.value) {
+            const oldOrders = JSON.parse(oldRes.value);
+            if (Array.isArray(oldOrders) && oldOrders.length) {
+              const migrated = oldOrders.map(o => ({ attachments: [], poNumber: '', ...o }));
+              if (window.storage.set) {
+                Promise.all(migrated.map(o => window.storage.set(orderKey(o.id), JSON.stringify(o), false)))
+                  .then(() => window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(migrated.map(o => o.id)), false))
+                  .catch(err => console.error('migration error:', err));
+              }
+              return migrated;
+            }
+          }
+        } catch (e) {
+          // لا توجد بيانات قديمة أيضًا
+        }
+      }
+
+      const loadedOrders = [];
+      for (const id of ids) {
+        try {
+          const r = await withTimeout(window.storage.get(orderKey(id), false), 4000);
+          if (r && r.value) loadedOrders.push(JSON.parse(r.value));
+        } catch (e) {
+          // تخطّي طلب مفقود
+        }
+      }
+      return loadedOrders;
+    },
+
+    async save(order) {
+      if (!window.storage || typeof window.storage.set !== 'function') return;
+      await withTimeout(window.storage.set(orderKey(order.id), JSON.stringify(order), false), 4000);
+      let ids = [];
+      try {
+        const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
+        if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
+      } catch (e) {
+        // لا يوجد فهرس بعد، نبدأ واحدًا جديدًا
+      }
+      if (!ids.includes(order.id)) {
+        ids.push(order.id);
+        await withTimeout(window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(ids), false), 4000);
+      }
+    },
+
+    async remove(id) {
+      if (!window.storage) return;
+      if (typeof window.storage.delete === 'function') {
+        await withTimeout(window.storage.delete(orderKey(id), false), 4000).catch(() => {});
+      }
+      let ids = [];
+      try {
+        const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
+        if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
+      } catch (e) {
+        return;
+      }
+      ids = ids.filter(x => x !== id);
+      if (window.storage.set) {
+        await withTimeout(window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(ids), false), 4000);
+      }
+    },
+  };
+}
+
 const emptyForm = {
   orderNumber: '',
   department: '',
@@ -138,51 +227,10 @@ function OrdersLedger() {
   useEffect(() => {
     (async () => {
       try {
-        if (!window.storage || typeof window.storage.get !== 'function') return;
-
-        let ids = [];
-        try {
-          const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
-          if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
-        } catch (e) {
-          // لا يوجد فهرس بعد
-        }
-
-        if (ids.length === 0) {
-          // محاولة ترحيل البيانات من التنسيق القديم (مفتاح واحد يحوي كل الطلبات)
-          try {
-            const oldRes = await withTimeout(window.storage.get(OLD_STORAGE_KEY, false), 4000);
-            if (oldRes && oldRes.value) {
-              const oldOrders = JSON.parse(oldRes.value);
-              if (Array.isArray(oldOrders) && oldOrders.length) {
-                const migrated = oldOrders.map(o => ({ attachments: [], poNumber: '', ...o }));
-                setOrders(migrated);
-                if (window.storage.set) {
-                  Promise.all(migrated.map(o => window.storage.set(orderKey(o.id), JSON.stringify(o), false)))
-                    .then(() => window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(migrated.map(o => o.id)), false))
-                    .catch(err => console.error('migration error:', err));
-                }
-                setLoaded(true);
-                return;
-              }
-            }
-          } catch (e) {
-            // لا توجد بيانات قديمة أيضًا
-          }
-        }
-
-        const loadedOrders = [];
-        for (const id of ids) {
-          try {
-            const r = await withTimeout(window.storage.get(orderKey(id), false), 4000);
-            if (r && r.value) loadedOrders.push(JSON.parse(r.value));
-          } catch (e) {
-            // تخطّي طلب مفقود
-          }
-        }
-        setOrders(loadedOrders);
+        const list = await window.ordersAPI.list();
+        setOrders(list || []);
       } catch (e) {
-        // تعذّر الوصول للتخزين مؤقتًا
+        console.error('load orders error:', e);
       } finally {
         setLoaded(true);
       }
@@ -324,37 +372,11 @@ function OrdersLedger() {
   }
 
   async function saveOrderToStorage(order) {
-    if (!window.storage || typeof window.storage.set !== 'function') return;
-    await withTimeout(window.storage.set(orderKey(order.id), JSON.stringify(order), false), 4000);
-    let ids = [];
-    try {
-      const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
-      if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
-    } catch (e) {
-      // لا يوجد فهرس بعد، نبدأ واحدًا جديدًا
-    }
-    if (!ids.includes(order.id)) {
-      ids.push(order.id);
-      await withTimeout(window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(ids), false), 4000);
-    }
+    await window.ordersAPI.save(order);
   }
 
   async function deleteOrderFromStorage(id) {
-    if (!window.storage) return;
-    if (typeof window.storage.delete === 'function') {
-      await withTimeout(window.storage.delete(orderKey(id), false), 4000).catch(() => {});
-    }
-    let ids = [];
-    try {
-      const idxRes = await withTimeout(window.storage.get(ORDERS_INDEX_KEY, false), 4000);
-      if (idxRes && idxRes.value) ids = JSON.parse(idxRes.value);
-    } catch (e) {
-      return;
-    }
-    ids = ids.filter(x => x !== id);
-    if (window.storage.set) {
-      await withTimeout(window.storage.set(ORDERS_INDEX_KEY, JSON.stringify(ids), false), 4000);
-    }
+    await window.ordersAPI.remove(id);
   }
 
   function openNew() {
@@ -2079,11 +2101,49 @@ window.addEventListener('error', function (e) {
 // إعدادات Supabase — عدّل القيمتين التاليتين ببيانات مشروعك
 // (Supabase Dashboard → Project Settings → API)
 // =====================================================================================
-const SUPABASE_URL = "eubtjhnljtyokekpgpae";
-const SUPABASE_ANON_KEY = "sb_publishable_vjXlFzu9VTwkLQCIZsOs7A_tJ1wPpI7";
+const SUPABASE_URL = "ضع_SUPABASE_URL_هنا";
+const SUPABASE_ANON_KEY = "ضع_SUPABASE_ANON_KEY_هنا";
 // =====================================================================================
 
 const CONFIG_NOT_SET = SUPABASE_URL.indexOf('ضع_') !== -1 || SUPABASE_ANON_KEY.indexOf('ضع_') !== -1;
+
+function orderToRow(o) {
+  return {
+    id: o.id,
+    order_number: o.orderNumber,
+    department: o.department,
+    category: o.category,
+    requested_by: o.requestedBy,
+    created_per: o.createdPer,
+    supplier: o.supplier || '',
+    order_date: o.orderDate,
+    po_issued: !!o.poIssued,
+    po_date: o.poDate || '',
+    po_number: o.poNumber || '',
+    notes: o.notes || '',
+    attachments: o.attachments || [],
+    created_at: o.createdAt || Date.now(),
+  };
+}
+
+function rowToOrder(r) {
+  return {
+    id: r.id,
+    orderNumber: r.order_number,
+    department: r.department,
+    category: r.category,
+    requestedBy: r.requested_by,
+    createdPer: r.created_per,
+    supplier: r.supplier || '',
+    orderDate: r.order_date,
+    poIssued: !!r.po_issued,
+    poDate: r.po_date || '',
+    poNumber: r.po_number || '',
+    notes: r.notes || '',
+    attachments: r.attachments || [],
+    createdAt: r.created_at,
+  };
+}
 
 if (CONFIG_NOT_SET) {
   showConfigError(
@@ -2095,30 +2155,32 @@ if (CONFIG_NOT_SET) {
 } else {
   try {
     var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    var TABLE = 'app_data';
+    var GENERIC_TABLE = 'app_data';
+    var ORDERS_TABLE = 'orders';
 
+    // بيانات الدخول وحسابات المشاهدة تبقى بنفس أسلوب المفتاح/القيمة (جدول app_data)
     window.storage = {
       get: function (key) {
-        return sb.from(TABLE).select('value').eq('key', key).maybeSingle().then(function (res) {
+        return sb.from(GENERIC_TABLE).select('value').eq('key', key).maybeSingle().then(function (res) {
           if (res.error) throw res.error;
           if (!res.data) return null;
           return { key: key, value: res.data.value };
         });
       },
       set: function (key, value) {
-        return sb.from(TABLE).upsert({ key: key, value: value, updated_at: new Date().toISOString() }).then(function (res) {
+        return sb.from(GENERIC_TABLE).upsert({ key: key, value: value, updated_at: new Date().toISOString() }).then(function (res) {
           if (res.error) throw res.error;
           return { key: key, value: value };
         });
       },
       delete: function (key) {
-        return sb.from(TABLE).delete().eq('key', key).then(function (res) {
+        return sb.from(GENERIC_TABLE).delete().eq('key', key).then(function (res) {
           if (res.error) throw res.error;
           return { key: key, deleted: true };
         });
       },
       list: function (prefix) {
-        var query = sb.from(TABLE).select('key');
+        var query = sb.from(GENERIC_TABLE).select('key');
         if (prefix) query = query.like('key', prefix + '%');
         return query.then(function (res) {
           if (res.error) throw res.error;
@@ -2128,13 +2190,40 @@ if (CONFIG_NOT_SET) {
       },
     };
 
-    // تأكيد إن الاتصال شغّال فعليًا قبل ما نعرض الموقع
-    sb.from(TABLE).select('key').limit(1).then(function (res) {
-      if (res.error) {
-        console.error('Supabase connection error:', res.error);
+    // الطلبات تُحفظ كصفوف حقيقية بجدول orders — أفضل للأداء والتقارير
+    window.ordersAPI = {
+      list: function () {
+        return sb.from(ORDERS_TABLE).select('*').order('created_at', { ascending: true }).then(function (res) {
+          if (res.error) throw res.error;
+          return (res.data || []).map(rowToOrder);
+        });
+      },
+      save: function (order) {
+        return sb.from(ORDERS_TABLE).upsert(orderToRow(order)).then(function (res) {
+          if (res.error) throw res.error;
+        });
+      },
+      remove: function (id) {
+        return sb.from(ORDERS_TABLE).delete().eq('id', id).then(function (res) {
+          if (res.error) throw res.error;
+        });
+      },
+    };
+
+    // تأكيد إن الاتصال شغّال فعليًا بالجدولين قبل ما نعرض الموقع
+    Promise.all([
+      sb.from(GENERIC_TABLE).select('key').limit(1),
+      sb.from(ORDERS_TABLE).select('id').limit(1),
+    ]).then(function (results) {
+      var gErr = results[0].error;
+      var oErr = results[1].error;
+      if (gErr || oErr) {
+        var badTable = gErr ? GENERIC_TABLE : ORDERS_TABLE;
+        var errMsg = gErr ? gErr.message : oErr.message;
+        console.error('Supabase connection error:', gErr || oErr);
         showConfigError(
-          'تعذّر الاتصال بجدول "' + TABLE + '" (' + res.error.message + '). ' +
-          'تأكد إنك أنشأت الجدول بنفس الاسم، وإن صلاحيات القراءة/الكتابة (RLS Policies) مفعّلة.'
+          'تعذّر الاتصال بجدول "' + badTable + '" (' + errMsg + '). ' +
+          'تأكد إنك أنشأت الجدولين بنفس الأسماء (app_data وorders)، وإن صلاحيات القراءة/الكتابة (RLS Policies) مفعّلة عليهم.'
         );
         return;
       }
