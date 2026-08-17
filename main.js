@@ -66,8 +66,9 @@ const OLD_STORAGE_KEY = 'purchase-orders-v1'; // مفتاح قديم (تجميع
 const ORDERS_INDEX_KEY = 'orders-index-v1';
 const orderKey = id => `order:${id}`;
 const ADMIN_USERNAME = 'Admin272200'; // اسم دخول مسؤول النظام (ثابت بالكود)
-// بصمة SHA-256 لكلمة السر بدل كتابتها نص صريح — كلمة السر الأصلية غير موجودة بالملف
-const ADMIN_PASSWORD_HASH = '3856c7f6005829540300760b836ec05c04fd87f47e212550625e4e4de064f62b';
+// بصمة SHA-256 افتراضية لكلمة السر (تُستخدم فقط لو ما غيّر المسؤول كلمة سره بعد)
+const DEFAULT_ADMIN_PASSWORD_HASH = '3856c7f6005829540300760b836ec05c04fd87f47e212550625e4e4de064f62b';
+const ADMIN_PASSWORD_KEY = 'admin-password-hash-v1'; // كلمة سر المسؤول الفعلية (قابلة للتغيير) تُحفظ هنا
 
 async function sha256(text) {
   const enc = new TextEncoder().encode(text);
@@ -76,6 +77,39 @@ async function sha256(text) {
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
 }
+
+async function getAdminPasswordHash() {
+  try {
+    if (window.storage && typeof window.storage.get === 'function') {
+      const res = await withTimeout(window.storage.get(ADMIN_PASSWORD_KEY, false), 4000);
+      if (res && res.value) return res.value;
+    }
+  } catch (e) {
+    // ما فيه كلمة سر محفوظة بعد، نستخدم الافتراضية
+  }
+  return DEFAULT_ADMIN_PASSWORD_HASH;
+}
+
+const PERMISSION_DEFS = [
+  { key: 'canAdd', label: 'إضافة طلبات جديدة' },
+  { key: 'canEdit', label: 'تعديل الطلبات' },
+  { key: 'canDelete', label: 'حذف الطلبات' },
+  { key: 'canUpload', label: 'رفع المرفقات' },
+  { key: 'canReports', label: 'الوصول للتقارير' },
+];
+
+const DEFAULT_PERMISSIONS = { canAdd: false, canEdit: false, canDelete: false, canUpload: false, canReports: false };
+const FULL_PERMISSIONS = { canAdd: true, canEdit: true, canDelete: true, canUpload: true, canReports: true };
+
+function normalizeViewer(v) {
+  if (v.permissions) return v;
+  const legacy = !!v.canEdit; // توافق مع الحسابات القديمة اللي فيها صلاحية واحدة فقط
+  return {
+    ...v,
+    permissions: { canAdd: legacy, canEdit: legacy, canDelete: legacy, canUpload: legacy, canReports: false },
+  };
+}
+
 const VIEWERS_KEY = 'app-viewers-v1'; // قائمة حسابات المشاهدة التي ينشئها المدير
 const SPLASH_MIN_MS = 5000;
 const IDLE_TIMEOUT_MS = 20000;
@@ -243,7 +277,7 @@ function OrdersLedger() {
   const [authSaving, setAuthSaving] = useState(false);
   const [authShakeKey, setAuthShakeKey] = useState(0);
   const [currentRole, setCurrentRole] = useState(null); // 'admin' | 'viewer'
-  const [canEditOrders, setCanEditOrders] = useState(false);
+  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS);
   const [adminUsername, setAdminUsername] = useState('');
   const [adminOpen, setAdminOpen] = useState(false);
   const [reportsOpen, setReportsOpen] = useState(false);
@@ -300,10 +334,11 @@ function OrdersLedger() {
 
     if (authMode === 'admin') {
       const enteredHash = await sha256(authForm.password);
-      if (uname === ADMIN_USERNAME && enteredHash === ADMIN_PASSWORD_HASH) {
+      const storedHash = await getAdminPasswordHash();
+      if (uname === ADMIN_USERNAME && enteredHash === storedHash) {
         setAppStage('app');
         setCurrentRole('admin');
-        setCanEditOrders(true);
+        setPermissions(FULL_PERMISSIONS);
         setAdminUsername(uname);
         setToast('أهلاً بك يا مسؤول النظام');
         setAuthForm({ username: '', password: '' });
@@ -323,7 +358,7 @@ function OrdersLedger() {
       if (window.storage && typeof window.storage.get === 'function') {
         try {
           const res = await withTimeout(window.storage.get(VIEWERS_KEY, false), 4000);
-          if (res && res.value) viewersList = JSON.parse(res.value);
+          if (res && res.value) viewersList = JSON.parse(res.value).map(normalizeViewer);
         } catch (e) {
           // لا توجد حسابات مشاهدة بعد
         }
@@ -333,7 +368,7 @@ function OrdersLedger() {
       if (viewerMatch) {
         setAppStage('app');
         setCurrentRole('viewer');
-        setCanEditOrders(!!viewerMatch.canEdit);
+        setPermissions(viewerMatch.permissions || DEFAULT_PERMISSIONS);
         setToast('أهلاً بك');
         setAuthForm({ username: '', password: '' });
         setTimeout(() => setToast(null), 2600);
@@ -360,7 +395,7 @@ function OrdersLedger() {
     setAuthForm({ username: '', password: '' });
     setAuthError('');
     setCurrentRole(null);
-    setCanEditOrders(false);
+    setPermissions(DEFAULT_PERMISSIONS);
     setAdminUsername('');
     setAdminOpen(false);
     setViewers([]);
@@ -370,14 +405,14 @@ function OrdersLedger() {
     try {
       if (!window.storage || typeof window.storage.get !== 'function') return;
       const res = await withTimeout(window.storage.get(VIEWERS_KEY, false), 4000);
-      if (res && res.value) setViewers(JSON.parse(res.value));
+      if (res && res.value) setViewers(JSON.parse(res.value).map(normalizeViewer));
     } catch (e) {
       // لا توجد حسابات مشاهدة بعد
     }
   }
 
-  async function addViewerAccount(username, password, canEdit) {
-    const entry = { id: uid(), username, password, canEdit: !!canEdit, createdAt: Date.now() };
+  async function addViewerAccount(username, password, perms) {
+    const entry = { id: uid(), username, password, permissions: { ...DEFAULT_PERMISSIONS, ...perms }, createdAt: Date.now() };
     const next = [...viewers, entry];
     setViewers(next);
     if (window.storage && typeof window.storage.set === 'function') {
@@ -400,17 +435,32 @@ function OrdersLedger() {
     }
   }
 
-  async function toggleViewerPermission(id) {
-    const next = viewers.map(v => (v.id === id ? { ...v, canEdit: !v.canEdit } : v));
+  async function updateViewerPermissions(id, perms) {
+    const next = viewers.map(v => (v.id === id ? { ...v, permissions: { ...v.permissions, ...perms } } : v));
     setViewers(next);
     try {
       if (window.storage && typeof window.storage.set === 'function') {
         await withTimeout(window.storage.set(VIEWERS_KEY, JSON.stringify(next), false), 4000);
       }
     } catch (e) {
-      console.error('toggle permission error:', e);
-      setToast('تنبيه: تعذّر حفظ تغيير الصلاحية بشكل دائم');
+      console.error('update permissions error:', e);
+      setToast('تنبيه: تعذّر حفظ تغيير الصلاحيات بشكل دائم');
       setTimeout(() => setToast(null), 4000);
+    }
+  }
+
+  async function changeViewerPassword(id, newPassword) {
+    const next = viewers.map(v => (v.id === id ? { ...v, password: newPassword } : v));
+    setViewers(next);
+    if (window.storage && typeof window.storage.set === 'function') {
+      await withTimeout(window.storage.set(VIEWERS_KEY, JSON.stringify(next), false), 4000);
+    }
+  }
+
+  async function changeAdminPassword(newPassword) {
+    const hash = await sha256(newPassword);
+    if (window.storage && typeof window.storage.set === 'function') {
+      await withTimeout(window.storage.set(ADMIN_PASSWORD_KEY, hash, false), 4000);
     }
   }
 
@@ -749,7 +799,7 @@ function OrdersLedger() {
                     <span className="hidden sm:inline">الإدارة</span>
                   </button>
                 )}
-                {currentRole === 'admin' && (
+                {(currentRole === 'admin' || permissions.canReports) && (
                   <button
                     onClick={() => setReportsOpen(true)}
                     style={{ background: GLASS_SOFT, color: TEXT_MUTED, border: `1px solid ${GLASS_BORDER}` }}
@@ -760,7 +810,7 @@ function OrdersLedger() {
                     <span className="hidden sm:inline">تقارير</span>
                   </button>
                 )}
-                {canEditOrders && (
+                {permissions.canAdd && (
                   <button
                     onClick={openNew}
                     style={{ background: ACCENT, color: ACCENT_TEXT_ON, boxShadow: '0 0 18px rgba(87,182,255,0.4)' }}
@@ -861,6 +911,7 @@ function OrdersLedger() {
               editing={!!editingId}
               invalidFields={invalidFields}
               shakeKey={shakeKey}
+              canUpload={currentRole === 'admin' || permissions.canUpload}
             />
           )}
 
@@ -870,7 +921,7 @@ function OrdersLedger() {
                 جارِ التحميل...
               </div>
             ) : filtered.length === 0 ? (
-              <EmptyState hasOrders={orders.length > 0} onAdd={openNew} canEdit={canEditOrders} />
+              <EmptyState hasOrders={orders.length > 0} onAdd={openNew} canEdit={permissions.canAdd} />
             ) : (
               filtered.map((order, i) => (
                 <OrderRow
@@ -878,7 +929,8 @@ function OrdersLedger() {
                   order={order}
                   index={i}
                   highlighted={order.id === highlightId}
-                  canEdit={canEditOrders}
+                  canEdit={currentRole === 'admin' || permissions.canEdit}
+                  canDelete={currentRole === 'admin' || permissions.canDelete}
                   onView={() => openView(order)}
                   onEdit={() => openEdit(order)}
                   onDelete={() => handleDelete(order.id)}
@@ -895,7 +947,8 @@ function OrdersLedger() {
         {viewingOrder && (
           <OrderDetailModal
             order={viewingOrder}
-            canEdit={canEditOrders}
+            canEdit={currentRole === 'admin' || permissions.canEdit}
+            canDelete={currentRole === 'admin' || permissions.canDelete}
             onClose={() => setViewingOrder(null)}
             onEdit={() => openEdit(viewingOrder)}
             onDelete={() => handleDelete(viewingOrder.id)}
@@ -908,7 +961,9 @@ function OrdersLedger() {
             onClose={() => setAdminOpen(false)}
             onAdd={addViewerAccount}
             onDelete={deleteViewerAccount}
-            onTogglePermission={toggleViewerPermission}
+            onUpdatePermissions={updateViewerPermissions}
+            onChangeViewerPassword={changeViewerPassword}
+            onChangeAdminPassword={changeAdminPassword}
             adminUsername={adminUsername}
           />
         )}
@@ -1016,7 +1071,7 @@ function EmptyState({ hasOrders, onAdd, canEdit }) {
   );
 }
 
-function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, invalidFields, shakeKey }) {
+function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, invalidFields, shakeKey, canUpload }) {
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
   const invalid = k => invalidFields && invalidFields.includes(k);
   const fieldStyle = k => ({
@@ -1061,9 +1116,9 @@ function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, 
             style={fieldStyle('category')}
             className={`w-full rounded-lg px-3 py-2 text-sm ${invalid('category') ? 'field-shake' : ''}`}
           >
-            <option value="" style={{ color: '#111' }}>اختر القسم</option>
+            <option value="" >اختر القسم</option>
             {CATEGORIES.map(c => (
-              <option key={c} value={c} style={{ color: '#111' }}>{c}</option>
+              <option key={c} value={c} >{c}</option>
             ))}
           </select>
         </Field>
@@ -1106,8 +1161,8 @@ function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, 
             style={inputStyle}
             className="w-full rounded-lg px-3 py-2 text-sm"
           >
-            <option value="no" style={{ color: '#111' }}>لم يصدر بعد</option>
-            <option value="yes" style={{ color: '#111' }}>صدر</option>
+            <option value="no" >لم يصدر بعد</option>
+            <option value="yes" >صدر</option>
           </select>
         </Field>
         <Field label="تاريخ صدور أمر الشراء">
@@ -1135,7 +1190,7 @@ function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, 
           </Field>
         </div>
         <div className="sm:col-span-2">
-          <AttachmentsField form={form} setForm={setForm} />
+          <AttachmentsField form={form} setForm={setForm} canUpload={canUpload} />
         </div>
       </div>
 
@@ -1173,7 +1228,7 @@ function Field({ label, required, children }) {
   );
 }
 
-function AttachmentsField({ form, setForm }) {
+function AttachmentsField({ form, setForm, canUpload = true }) {
   const [fileError, setFileError] = useState('');
   const inputRef = React.useRef(null);
 
@@ -1234,15 +1289,17 @@ function AttachmentsField({ form, setForm }) {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => inputRef.current && inputRef.current.click()}
-        style={{ background: FIELD_BG, border: `1px dashed ${FIELD_BORDER}`, color: TEXT_MUTED }}
-        className="w-full rounded-lg py-2.5 text-sm flex items-center justify-center gap-1.5"
-      >
-        <Paperclip size={14} />
-        إرفاق ملف أو مستند
-      </button>
+      {canUpload && (
+        <button
+          type="button"
+          onClick={() => inputRef.current && inputRef.current.click()}
+          style={{ background: FIELD_BG, border: `1px dashed ${FIELD_BORDER}`, color: TEXT_MUTED }}
+          className="w-full rounded-lg py-2.5 text-sm flex items-center justify-center gap-1.5"
+        >
+          <Paperclip size={14} />
+          إرفاق ملف أو مستند
+        </button>
+      )}
       <input
         ref={inputRef}
         type="file"
@@ -1263,7 +1320,7 @@ function AttachmentsField({ form, setForm }) {
   );
 }
 
-function OrderRow({ order, index, highlighted, canEdit, onView, onEdit, onDelete }) {
+function OrderRow({ order, index, highlighted, canEdit, canDelete, onView, onEdit, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const attachCount = (order.attachments || []).length;
   return (
@@ -1367,7 +1424,7 @@ function OrderRow({ order, index, highlighted, canEdit, onView, onEdit, onDelete
             <Pencil size={15} />
           </button>
         )}
-        {canEdit && (confirmDelete ? (
+        {canDelete && (confirmDelete ? (
           <button onClick={onDelete} style={{ color: DANGER }} className="text-xs font-bold px-2 py-2">
             تأكيد الحذف؟
           </button>
@@ -1611,7 +1668,7 @@ function AuthScreen({ authMode, setAuthMode, form, setForm, onSubmit, saving, er
   );
 }
 
-function OrderDetailModal({ order, canEdit, onClose, onEdit, onDelete }) {
+function OrderDetailModal({ order, canEdit, canDelete, onClose, onEdit, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const attachments = order.attachments || [];
 
@@ -1698,17 +1755,19 @@ function OrderDetailModal({ order, canEdit, onClose, onEdit, onDelete }) {
           )}
         </div>
 
-        {canEdit && (
+        {(canEdit || canDelete) && (
           <div className="flex gap-2 mt-5">
-            <button
-              onClick={onEdit}
-              style={{ background: ACCENT, color: ACCENT_TEXT_ON, boxShadow: '0 0 18px rgba(87,182,255,0.4)' }}
-              className="flex items-center gap-1.5 font-bold text-sm px-4 py-2.5 rounded-full"
-            >
-              <Pencil size={14} />
-              تعديل
-            </button>
-            {confirmDelete ? (
+            {canEdit && (
+              <button
+                onClick={onEdit}
+                style={{ background: ACCENT, color: ACCENT_TEXT_ON, boxShadow: '0 0 18px rgba(87,182,255,0.4)' }}
+                className="flex items-center gap-1.5 font-bold text-sm px-4 py-2.5 rounded-full"
+              >
+                <Pencil size={14} />
+                تعديل
+              </button>
+            )}
+            {canDelete && (confirmDelete ? (
               <button onClick={onDelete} style={{ color: DANGER }} className="text-sm font-bold px-3 py-2.5">
                 تأكيد الحذف؟
               </button>
@@ -1721,7 +1780,7 @@ function OrderDetailModal({ order, canEdit, onClose, onEdit, onDelete }) {
                 <Trash2 size={14} />
                 حذف
               </button>
-            )}
+            ))}
           </div>
         )}
       </div>
@@ -1743,13 +1802,23 @@ function DetailRow({ icon, label, value, multiline }) {
   );
 }
 
-function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adminUsername }) {
-  const [form, setForm] = useState({ username: '', password: '', confirm: '', canEdit: false });
+function AdminPanel({ viewers, onClose, onAdd, onDelete, onUpdatePermissions, onChangeViewerPassword, onChangeAdminPassword, adminUsername }) {
+  const [form, setForm] = useState({ username: '', password: '', confirm: '', permissions: { ...DEFAULT_PERMISSIONS } });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
   const [toast, setToast] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+
+  const [ownPass, setOwnPass] = useState({ password: '', confirm: '' });
+  const [ownPassError, setOwnPassError] = useState('');
+  const [ownPassSaving, setOwnPassSaving] = useState(false);
+  const [ownPassToast, setOwnPassToast] = useState('');
+
+  function togglePerm(key) {
+    setForm(f => ({ ...f, permissions: { ...f.permissions, [key]: !f.permissions[key] } }));
+  }
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -1772,8 +1841,8 @@ function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adm
     setSaving(true);
     setError('');
     try {
-      await onAdd(username, form.password, form.canEdit);
-      setForm({ username: '', password: '', confirm: '', canEdit: false });
+      await onAdd(username, form.password, form.permissions);
+      setForm({ username: '', password: '', confirm: '', permissions: { ...DEFAULT_PERMISSIONS } });
       setToast('تم إنشاء الحساب بنجاح');
       setTimeout(() => setToast(''), 2400);
     } catch (err) {
@@ -1784,13 +1853,38 @@ function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adm
     }
   }
 
+  async function handleChangeOwnPassword(e) {
+    e.preventDefault();
+    if (!ownPass.password) {
+      setOwnPassError('اكتب كلمة السر الجديدة');
+      return;
+    }
+    if (ownPass.password !== ownPass.confirm) {
+      setOwnPassError('كلمة السر وتأكيدها غير متطابقين');
+      return;
+    }
+    setOwnPassSaving(true);
+    setOwnPassError('');
+    try {
+      await onChangeAdminPassword(ownPass.password);
+      setOwnPass({ password: '', confirm: '' });
+      setOwnPassToast('تم تحديث كلمة سرك بنجاح');
+      setTimeout(() => setOwnPassToast(''), 2600);
+    } catch (err) {
+      console.error('change admin password error:', err);
+      setOwnPassError('صار خطأ أثناء الحفظ، حاول مرة أخرى');
+    } finally {
+      setOwnPassSaving(false);
+    }
+  }
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,8,14,0.6)' }} className="glass" />
       <div
         onClick={e => e.stopPropagation()}
         className="glass form-open rounded-2xl p-6 w-full"
-        style={{ background: GLASS_STRONG, border: `1px solid ${GLASS_BORDER}`, maxWidth: 440, maxHeight: '85vh', overflowY: 'auto', position: 'relative' }}
+        style={{ background: GLASS_STRONG, border: `1px solid ${GLASS_BORDER}`, maxWidth: 460, maxHeight: '85vh', overflowY: 'auto', position: 'relative' }}
       >
         <div className="flex items-center justify-between mb-1">
           <h2 style={{ fontFamily: "'Cairo', sans-serif", color: TEXT }} className="font-bold text-lg flex items-center gap-2">
@@ -1801,8 +1895,52 @@ function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adm
             <X size={20} />
           </button>
         </div>
-        <p style={{ color: TEXT_MUTED }} className="text-xs mb-5">
-          أنشئ حسابات دخول وحدد صلاحية كل حساب: "عرض فقط" يقدر يستعرض ويبحث ويفلتر بدون تعديل، أو "صلاحية كاملة" يقدر يضيف ويعدّل ويحذف الطلبات مثل مسؤول النظام تمامًا.
+
+        <div style={{ background: FIELD_BG, border: `1px solid ${FIELD_BORDER}` }} className="rounded-xl p-3 mt-4 mb-5">
+          <span style={{ color: TEXT }} className="text-sm font-bold flex items-center gap-1.5 mb-2">
+            <Lock size={14} style={{ color: ACCENT }} />
+            تغيير كلمة سر مسؤول النظام
+          </span>
+          <form onSubmit={handleChangeOwnPassword} className="flex flex-col gap-2">
+            <input
+              type="password"
+              placeholder="كلمة السر الجديدة"
+              value={ownPass.password}
+              onChange={e => setOwnPass(p => ({ ...p, password: e.target.value }))}
+              style={inputStyle}
+              className="w-full rounded-lg px-3 py-2 text-sm"
+            />
+            <input
+              type="password"
+              placeholder="تأكيد كلمة السر الجديدة"
+              value={ownPass.confirm}
+              onChange={e => setOwnPass(p => ({ ...p, confirm: e.target.value }))}
+              style={inputStyle}
+              className="w-full rounded-lg px-3 py-2 text-sm"
+            />
+            {ownPassError && (
+              <p style={{ color: REQUIRED_RED }} className="text-xs">
+                {ownPassError}
+              </p>
+            )}
+            {ownPassToast && (
+              <p style={{ color: ACCENT }} className="text-xs">
+                {ownPassToast}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={ownPassSaving}
+              style={{ background: ACCENT, color: ACCENT_TEXT_ON }}
+              className="self-start font-bold text-xs px-4 py-2 rounded-full disabled:opacity-60"
+            >
+              {ownPassSaving ? 'جارِ التحديث...' : 'تحديث كلمة السر'}
+            </button>
+          </form>
+        </div>
+
+        <p style={{ color: TEXT_MUTED }} className="text-xs mb-3">
+          أنشئ حسابات دخول وحدد صلاحية كل واحدة بدقة — اختر أي الأشياء يقدر الشخص يسويها.
         </p>
 
         <form onSubmit={handleAdd} className="mb-5">
@@ -1840,20 +1978,28 @@ function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adm
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setForm(f => ({ ...f, canEdit: !f.canEdit }))}
-            style={{ background: form.canEdit ? ACCENT_DIM : FIELD_BG, border: `1px solid ${form.canEdit ? ACCENT : FIELD_BORDER}` }}
-            className="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 mb-3"
-          >
-            <span className="flex items-center gap-2">
-              <Shield size={15} style={{ color: form.canEdit ? ACCENT : TEXT_MUTED }} />
-              <span style={{ color: form.canEdit ? ACCENT : TEXT_MUTED }} className="text-sm font-medium">
-                صلاحية كاملة (إضافة وتعديل وحذف الطلبات)
-              </span>
-            </span>
-            <ToggleSwitch on={form.canEdit} />
-          </button>
+          <span style={{ color: TEXT_MUTED }} className="text-xs font-medium mb-1.5 block">
+            الصلاحيات
+          </span>
+          <div className="flex flex-col gap-1.5 mb-3">
+            {PERMISSION_DEFS.map(p => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => togglePerm(p.key)}
+                style={{
+                  background: form.permissions[p.key] ? ACCENT_DIM : FIELD_BG,
+                  border: `1px solid ${form.permissions[p.key] ? ACCENT : FIELD_BORDER}`,
+                }}
+                className="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+              >
+                <span style={{ color: form.permissions[p.key] ? ACCENT : TEXT_MUTED }} className="text-sm font-medium">
+                  {p.label}
+                </span>
+                <ToggleSwitch on={form.permissions[p.key]} />
+              </button>
+            ))}
+          </div>
 
           {error && (
             <p style={{ color: REQUIRED_RED }} className="text-xs mb-2">
@@ -1887,43 +2033,163 @@ function AdminPanel({ viewers, onClose, onAdd, onDelete, onTogglePermission, adm
           ) : (
             <div className="flex flex-col gap-2">
               {viewers.map(v => (
-                <div
+                <ViewerRow
                   key={v.id}
-                  style={{ background: FIELD_BG, border: `1px solid ${FIELD_BORDER}` }}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2"
-                >
-                  <span style={{ color: TEXT }} className="text-sm flex items-center gap-1.5">
-                    <User size={13} style={{ color: TEXT_MUTED }} />
-                    {v.username}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onTogglePermission(v.id)}
-                      style={{
-                        background: v.canEdit ? ACCENT_DIM : PENDING_DIM,
-                        color: v.canEdit ? ACCENT : PENDING,
-                      }}
-                      className="flex items-center gap-1 rounded-full py-1 px-2.5 text-xs font-bold"
-                    >
-                      <Shield size={11} />
-                      {v.canEdit ? 'صلاحية كاملة' : 'عرض فقط'}
-                    </button>
-                    {confirmDeleteId === v.id ? (
-                      <button onClick={() => { onDelete(v.id); setConfirmDeleteId(null); }} style={{ color: DANGER }} className="text-xs font-bold">
-                        تأكيد الحذف؟
-                      </button>
-                    ) : (
-                      <button onClick={() => setConfirmDeleteId(v.id)} style={{ color: TEXT_MUTED }} className="p-1.5 rounded-lg hover:bg-white/10" aria-label={`حذف ${v.username}`}>
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
+                  viewer={v}
+                  expanded={expandedId === v.id}
+                  onToggleExpand={() => setExpandedId(id => (id === v.id ? null : v.id))}
+                  onUpdatePermissions={perms => onUpdatePermissions(v.id, perms)}
+                  onChangePassword={pwd => onChangeViewerPassword(v.id, pwd)}
+                  confirmingDelete={confirmDeleteId === v.id}
+                  onAskDelete={() => setConfirmDeleteId(v.id)}
+                  onConfirmDelete={() => {
+                    onDelete(v.id);
+                    setConfirmDeleteId(null);
+                  }}
+                  onCancelDelete={() => setConfirmDeleteId(null)}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ViewerRow({ viewer, expanded, onToggleExpand, onUpdatePermissions, onChangePassword, confirmingDelete, onAskDelete, onConfirmDelete, onCancelDelete }) {
+  const perms = viewer.permissions || DEFAULT_PERMISSIONS;
+  const activeCount = PERMISSION_DEFS.filter(p => perms[p.key]).length;
+
+  const [pwd, setPwd] = useState({ password: '', confirm: '' });
+  const [pwdError, setPwdError] = useState('');
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [pwdToast, setPwdToast] = useState('');
+
+  async function handlePasswordSave(e) {
+    e.preventDefault();
+    if (!pwd.password) {
+      setPwdError('اكتب كلمة السر الجديدة');
+      return;
+    }
+    if (pwd.password !== pwd.confirm) {
+      setPwdError('كلمة السر وتأكيدها غير متطابقين');
+      return;
+    }
+    setPwdSaving(true);
+    setPwdError('');
+    try {
+      await onChangePassword(pwd.password);
+      setPwd({ password: '', confirm: '' });
+      setPwdToast('تم تحديث كلمة السر');
+      setTimeout(() => setPwdToast(''), 2400);
+    } catch (err) {
+      console.error('change viewer password error:', err);
+      setPwdError('صار خطأ أثناء الحفظ');
+    } finally {
+      setPwdSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ background: FIELD_BG, border: `1px solid ${FIELD_BORDER}` }} className="rounded-lg overflow-hidden">
+      <button type="button" onClick={onToggleExpand} className="w-full flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-right">
+        <span style={{ color: TEXT }} className="text-sm flex items-center gap-1.5">
+          <User size={13} style={{ color: TEXT_MUTED }} />
+          {viewer.username}
+        </span>
+        <span style={{ color: activeCount > 0 ? ACCENT : PENDING, fontSize: 11 }} className="font-bold">
+          {activeCount > 0 ? `${activeCount} صلاحيات مفعّلة` : 'بدون صلاحيات'}
+        </span>
+      </button>
+
+      {expanded && (
+        <div style={{ borderTop: `1px solid ${FIELD_BORDER}` }} className="p-3">
+          <span style={{ color: TEXT_MUTED }} className="text-xs font-medium mb-1.5 block">
+            الصلاحيات
+          </span>
+          <div className="flex flex-col gap-1.5 mb-4">
+            {PERMISSION_DEFS.map(p => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => onUpdatePermissions({ [p.key]: !perms[p.key] })}
+                style={{
+                  background: perms[p.key] ? ACCENT_DIM : GLASS_SOFT,
+                  border: `1px solid ${perms[p.key] ? ACCENT : FIELD_BORDER}`,
+                }}
+                className="w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+              >
+                <span style={{ color: perms[p.key] ? ACCENT : TEXT_MUTED }} className="text-sm font-medium">
+                  {p.label}
+                </span>
+                <ToggleSwitch on={perms[p.key]} />
+              </button>
+            ))}
+          </div>
+
+          <span style={{ color: TEXT_MUTED }} className="text-xs font-medium mb-1.5 block">
+            تغيير كلمة السر
+          </span>
+          <form onSubmit={handlePasswordSave} className="flex flex-col gap-2 mb-4">
+            <input
+              type="password"
+              placeholder="كلمة السر الجديدة"
+              value={pwd.password}
+              onChange={e => setPwd(p => ({ ...p, password: e.target.value }))}
+              style={inputStyle}
+              className="w-full rounded-lg px-3 py-2 text-sm"
+            />
+            <input
+              type="password"
+              placeholder="تأكيد كلمة السر الجديدة"
+              value={pwd.confirm}
+              onChange={e => setPwd(p => ({ ...p, confirm: e.target.value }))}
+              style={inputStyle}
+              className="w-full rounded-lg px-3 py-2 text-sm"
+            />
+            {pwdError && (
+              <p style={{ color: REQUIRED_RED }} className="text-xs">
+                {pwdError}
+              </p>
+            )}
+            {pwdToast && (
+              <p style={{ color: ACCENT }} className="text-xs">
+                {pwdToast}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={pwdSaving}
+              style={{ background: ACCENT, color: ACCENT_TEXT_ON }}
+              className="self-start font-bold text-xs px-4 py-2 rounded-full disabled:opacity-60"
+            >
+              {pwdSaving ? 'جارِ التحديث...' : 'تحديث كلمة السر'}
+            </button>
+          </form>
+
+          <div style={{ borderTop: `1px solid ${FIELD_BORDER}` }} className="pt-3 flex justify-end">
+            {confirmingDelete ? (
+              <div className="flex items-center gap-2">
+                <span style={{ color: TEXT_MUTED }} className="text-xs">
+                  متأكد؟
+                </span>
+                <button onClick={onConfirmDelete} style={{ color: DANGER }} className="text-xs font-bold">
+                  تأكيد الحذف
+                </button>
+                <button onClick={onCancelDelete} style={{ color: TEXT_MUTED }} className="text-xs">
+                  إلغاء
+                </button>
+              </div>
+            ) : (
+              <button onClick={onAskDelete} style={{ color: DANGER }} className="flex items-center gap-1.5 text-xs font-bold">
+                <Trash2 size={13} />
+                حذف الحساب
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
