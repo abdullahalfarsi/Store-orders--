@@ -2060,4 +2060,88 @@ function ReportsModal({ orders, onClose }) {
 }
 
 
-ReactDOM.createRoot(document.getElementById('root')).render(<OrdersLedger />);
+function showConfigError(msg) {
+  var el = document.getElementById('root');
+  if (!el) return;
+  el.innerHTML =
+    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:sans-serif;color:#F1F4F8;background:#0B121C;">' +
+    '<div style="max-width:420px;">' +
+    '<p style="font-size:18px;font-weight:bold;margin-bottom:10px;">تعذّر تشغيل الموقع</p>' +
+    '<p style="font-size:13px;color:#9FAAB8;line-height:1.7;">' + msg + '</p>' +
+    '</div></div>';
+}
+
+window.addEventListener('error', function (e) {
+  console.error('Global error:', e.error || e.message);
+});
+
+// =====================================================================================
+// إعدادات Supabase — عدّل القيمتين التاليتين ببيانات مشروعك
+// (Supabase Dashboard → Project Settings → API)
+// =====================================================================================
+const SUPABASE_URL = "ضع_SUPABASE_URL_هنا";
+const SUPABASE_ANON_KEY = "ضع_SUPABASE_ANON_KEY_هنا";
+// =====================================================================================
+
+const CONFIG_NOT_SET = SUPABASE_URL.indexOf('ضع_') !== -1 || SUPABASE_ANON_KEY.indexOf('ضع_') !== -1;
+
+if (CONFIG_NOT_SET) {
+  showConfigError(
+    'لسه ما بدّلت إعدادات Supabase بالكود. افتح ملف main.js بمحرر نصوص، ' +
+    'لاقي "SUPABASE_URL" و"SUPABASE_ANON_KEY" بالأعلى، واستبدلهم ببيانات مشروعك من Supabase Dashboard → Project Settings → API.'
+  );
+} else if (typeof window.supabase === 'undefined') {
+  showConfigError('تعذّر تحميل مكتبة Supabase. تأكد إن الاتصال بالإنترنت شغّال وحاول تحديث الصفحة.');
+} else {
+  try {
+    var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    var TABLE = 'app_data';
+
+    window.storage = {
+      get: function (key) {
+        return sb.from(TABLE).select('value').eq('key', key).maybeSingle().then(function (res) {
+          if (res.error) throw res.error;
+          if (!res.data) return null;
+          return { key: key, value: res.data.value };
+        });
+      },
+      set: function (key, value) {
+        return sb.from(TABLE).upsert({ key: key, value: value, updated_at: new Date().toISOString() }).then(function (res) {
+          if (res.error) throw res.error;
+          return { key: key, value: value };
+        });
+      },
+      delete: function (key) {
+        return sb.from(TABLE).delete().eq('key', key).then(function (res) {
+          if (res.error) throw res.error;
+          return { key: key, deleted: true };
+        });
+      },
+      list: function (prefix) {
+        var query = sb.from(TABLE).select('key');
+        if (prefix) query = query.like('key', prefix + '%');
+        return query.then(function (res) {
+          if (res.error) throw res.error;
+          var keys = (res.data || []).map(function (r) { return r.key; });
+          return { keys: keys, prefix: prefix };
+        });
+      },
+    };
+
+    // تأكيد إن الاتصال شغّال فعليًا قبل ما نعرض الموقع
+    sb.from(TABLE).select('key').limit(1).then(function (res) {
+      if (res.error) {
+        console.error('Supabase connection error:', res.error);
+        showConfigError(
+          'تعذّر الاتصال بجدول "' + TABLE + '" (' + res.error.message + '). ' +
+          'تأكد إنك أنشأت الجدول بنفس الاسم، وإن صلاحيات القراءة/الكتابة (RLS Policies) مفعّلة.'
+        );
+        return;
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(<OrdersLedger />);
+    });
+  } catch (err) {
+    console.error('Supabase init error:', err);
+    showConfigError('تعذّر تهيئة Supabase: ' + (err && err.message ? err.message : 'خطأ غير معروف'));
+  }
+}
