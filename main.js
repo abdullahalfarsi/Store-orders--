@@ -54,6 +54,10 @@ const PENDING = '#93A0B3';
 const PENDING_DIM = 'rgba(147,160,179,0.16)';
 const DANGER = '#E38686';
 const REQUIRED_RED = '#FF7A7A';
+const RECEIVED = '#5FD98A';
+const RECEIVED_DIM = 'rgba(95,217,138,0.16)';
+const NOT_RECEIVED = '#E8A15C';
+const NOT_RECEIVED_DIM = 'rgba(232,161,92,0.16)';
 
 const CATEGORIES = ['أحبار', 'أجهزة', 'طلبات عامة'];
 const CATEGORY_STYLES = {
@@ -246,6 +250,7 @@ const emptyForm = {
   poIssued: false,
   poDate: '',
   poNumber: '',
+  received: false,
   notes: '',
   attachments: [],
 };
@@ -492,6 +497,7 @@ function OrdersLedger() {
       poIssued: order.poIssued,
       poDate: order.poDate || '',
       poNumber: order.poNumber || '',
+      received: order.received || false,
       notes: order.notes || '',
       attachments: order.attachments || [],
     });
@@ -1184,6 +1190,17 @@ function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, 
             className="w-full rounded-lg px-3 py-2 text-sm"
           />
         </Field>
+        <Field label="هل تم استلام الطلب؟">
+          <select
+            value={form.received ? 'yes' : 'no'}
+            onChange={e => setForm(f => ({ ...f, received: e.target.value === 'yes' }))}
+            style={inputStyle}
+            className="w-full rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="no">لا</option>
+            <option value="yes">نعم</option>
+          </select>
+        </Field>
         <div className="sm:col-span-2">
           <Field label="ملاحظات">
             <textarea value={form.notes} onChange={set('notes')} rows={2} style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm resize-none" />
@@ -1374,6 +1391,16 @@ function OrderRow({ order, index, highlighted, canEdit, canDelete, onView, onEdi
               {order.category}
             </span>
           )}
+          <span
+            style={{
+              background: order.received ? RECEIVED_DIM : NOT_RECEIVED_DIM,
+              color: order.received ? RECEIVED : NOT_RECEIVED,
+              fontSize: 11,
+            }}
+            className="font-bold px-2 py-0.5 rounded-full"
+          >
+            {order.received ? 'تم الاستلام' : 'لم يُستلم بعد'}
+          </span>
           {attachCount > 0 && (
             <span style={{ color: TEXT_MUTED, fontSize: 11 }} className="flex items-center gap-1">
               <Paperclip size={12} /> {attachCount}
@@ -1715,6 +1742,16 @@ function OrderDetailModal({ order, canEdit, canDelete, onClose, onEdit, onDelete
               {order.category}
             </span>
           )}
+          <span
+            style={{
+              background: order.received ? RECEIVED_DIM : NOT_RECEIVED_DIM,
+              color: order.received ? RECEIVED : NOT_RECEIVED,
+              fontSize: 12,
+            }}
+            className="font-bold px-2.5 py-1 rounded-full"
+          >
+            {order.received ? 'تم الاستلام' : 'لم يُستلم بعد'}
+          </span>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -2234,6 +2271,7 @@ const REPORT_COLUMNS = [
   { key: 'poStatus', label: 'حالة أمر الشراء' },
   { key: 'poDate', label: 'تاريخ صدور الأمر' },
   { key: 'poNumber', label: 'رقم أمر الشراء' },
+  { key: 'receivedStatus', label: 'حالة الاستلام' },
   { key: 'notes', label: 'ملاحظات' },
 ];
 
@@ -2247,6 +2285,7 @@ function escapeHtml(str) {
 
 function getReportValue(order, key) {
   if (key === 'poStatus') return order.poIssued ? 'صدر أمر الشراء' : 'لم يصدر بعد';
+  if (key === 'receivedStatus') return order.received ? 'تم الاستلام' : 'لم يُستلم بعد';
   return order[key] || '';
 }
 
@@ -2493,6 +2532,7 @@ function orderToRow(o) {
     po_issued: !!o.poIssued,
     po_date: o.poDate || '',
     po_number: o.poNumber || '',
+    received: !!o.received,
     notes: o.notes || '',
     attachments: o.attachments || [],
     created_at: o.createdAt || Date.now(),
@@ -2512,6 +2552,7 @@ function rowToOrder(r) {
     poIssued: !!r.po_issued,
     poDate: r.po_date || '',
     poNumber: r.po_number || '',
+    received: !!r.received,
     notes: r.notes || '',
     attachments: r.attachments || [],
     createdAt: r.created_at,
