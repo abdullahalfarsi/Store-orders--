@@ -600,7 +600,17 @@ function OrdersLedger() {
     list.sort((a, b) => {
       const da = new Date(a.orderDate).getTime() || 0;
       const db = new Date(b.orderDate).getTime() || 0;
-      return sortDir === 'desc' ? db - da : da - db;
+      if (da !== db) return sortDir === 'desc' ? db - da : da - db;
+
+      // نفس التاريخ: رتّب تلقائيًا برقم الطلب (الأكبر فوق عند "الأحدث أولاً")
+      const na = parseFloat(String(a.orderNumber).replace(/[^\d.-]/g, ''));
+      const nb = parseFloat(String(b.orderNumber).replace(/[^\d.-]/g, ''));
+      if (!isNaN(na) && !isNaN(nb) && na !== nb) {
+        return sortDir === 'desc' ? nb - na : na - nb;
+      }
+      return sortDir === 'desc'
+        ? String(b.orderNumber).localeCompare(String(a.orderNumber))
+        : String(a.orderNumber).localeCompare(String(b.orderNumber));
     });
     return list;
   }, [orders, query, statusFilter, categoryFilter, sortDir]);
