@@ -58,6 +58,28 @@ const RECEIVED = '#5FD98A';
 const RECEIVED_DIM = 'rgba(95,217,138,0.16)';
 const NOT_RECEIVED = '#E8A15C';
 const NOT_RECEIVED_DIM = 'rgba(232,161,92,0.16)';
+const PARTIAL_RECEIVED = '#F2C94C';
+const PARTIAL_RECEIVED_DIM = 'rgba(242,201,76,0.16)';
+
+// توافق مع البيانات القديمة اللي فيها حقل received (true/false) فقط بدل receivedStatus
+function getReceivedStatus(order) {
+  if (order.receivedStatus) return order.receivedStatus;
+  return order.received ? 'yes' : 'no';
+}
+
+function receivedLabel(order) {
+  const status = getReceivedStatus(order);
+  if (status === 'yes') return 'تم الاستلام';
+  if (status === 'partial') return 'استلام جزئي';
+  return 'لم يُستلم بعد';
+}
+
+function receivedColors(order) {
+  const status = getReceivedStatus(order);
+  if (status === 'yes') return { bg: RECEIVED_DIM, fg: RECEIVED };
+  if (status === 'partial') return { bg: PARTIAL_RECEIVED_DIM, fg: PARTIAL_RECEIVED };
+  return { bg: NOT_RECEIVED_DIM, fg: NOT_RECEIVED };
+}
 
 const CATEGORIES = ['أحبار', 'أجهزة', 'طلبات عامة'];
 const CATEGORY_STYLES = {
@@ -250,7 +272,9 @@ const emptyForm = {
   poIssued: false,
   poDate: '',
   poNumber: '',
-  received: false,
+  receivedStatus: 'no',
+  receivedQty: '',
+  totalQty: '',
   notes: '',
   attachments: [],
 };
@@ -497,7 +521,9 @@ function OrdersLedger() {
       poIssued: order.poIssued,
       poDate: order.poDate || '',
       poNumber: order.poNumber || '',
-      received: order.received || false,
+      receivedStatus: getReceivedStatus(order),
+      receivedQty: order.receivedQty || '',
+      totalQty: order.totalQty || '',
       notes: order.notes || '',
       attachments: order.attachments || [],
     });
@@ -1202,15 +1228,40 @@ function OrderForm({ form, setForm, onSubmit, onCancel, saving, error, editing, 
         </Field>
         <Field label="هل تم استلام الطلب؟">
           <select
-            value={form.received ? 'yes' : 'no'}
-            onChange={e => setForm(f => ({ ...f, received: e.target.value === 'yes' }))}
+            value={form.receivedStatus}
+            onChange={e => setForm(f => ({ ...f, receivedStatus: e.target.value }))}
             style={inputStyle}
             className="w-full rounded-lg px-3 py-2 text-sm"
           >
             <option value="no">لا</option>
             <option value="yes">نعم</option>
+            <option value="partial">استلام جزئي</option>
           </select>
         </Field>
+        {form.receivedStatus === 'partial' && (
+          <>
+            <Field label="الكمية الأصلية">
+              <input
+                type="number"
+                min="0"
+                value={form.totalQty}
+                onChange={set('totalQty')}
+                style={inputStyle}
+                className="w-full rounded-lg px-3 py-2 text-sm"
+              />
+            </Field>
+            <Field label="الكمية المستلمة">
+              <input
+                type="number"
+                min="0"
+                value={form.receivedQty}
+                onChange={set('receivedQty')}
+                style={inputStyle}
+                className="w-full rounded-lg px-3 py-2 text-sm"
+              />
+            </Field>
+          </>
+        )}
         <div className="sm:col-span-2">
           <Field label="ملاحظات">
             <textarea value={form.notes} onChange={set('notes')} rows={2} style={inputStyle} className="w-full rounded-lg px-3 py-2 text-sm resize-none" />
@@ -1403,13 +1454,14 @@ function OrderRow({ order, index, highlighted, canEdit, canDelete, onView, onEdi
           )}
           <span
             style={{
-              background: order.received ? RECEIVED_DIM : NOT_RECEIVED_DIM,
-              color: order.received ? RECEIVED : NOT_RECEIVED,
+              background: receivedColors(order).bg,
+              color: receivedColors(order).fg,
               fontSize: 11,
             }}
             className="font-bold px-2 py-0.5 rounded-full"
           >
-            {order.received ? 'تم الاستلام' : 'لم يُستلم بعد'}
+            {receivedLabel(order)}
+            {getReceivedStatus(order) === 'partial' && order.totalQty ? ` (${order.receivedQty || 0}/${order.totalQty})` : ''}
           </span>
           {attachCount > 0 && (
             <span style={{ color: TEXT_MUTED, fontSize: 11 }} className="flex items-center gap-1">
@@ -1768,13 +1820,13 @@ function OrderDetailModal({ order, canEdit, canDelete, onClose, onEdit, onDelete
           )}
           <span
             style={{
-              background: order.received ? RECEIVED_DIM : NOT_RECEIVED_DIM,
-              color: order.received ? RECEIVED : NOT_RECEIVED,
+              background: receivedColors(order).bg,
+              color: receivedColors(order).fg,
               fontSize: 12,
             }}
             className="font-bold px-2.5 py-1 rounded-full"
           >
-            {order.received ? 'تم الاستلام' : 'لم يُستلم بعد'}
+            {receivedLabel(order)}
           </span>
         </div>
 
@@ -1786,6 +1838,9 @@ function OrderDetailModal({ order, canEdit, canDelete, onClose, onEdit, onDelete
           <DetailRow icon={<Calendar size={15} />} label="تاريخ الطلب" value={order.orderDate} />
           {order.poIssued && <DetailRow icon={<Calendar size={15} />} label="تاريخ صدور أمر الشراء" value={order.poDate || '—'} />}
           {order.poIssued && <DetailRow label="رقم أمر الشراء" value={order.poNumber || '—'} />}
+          {getReceivedStatus(order) === 'partial' && (
+            <DetailRow label="الكمية المستلمة" value={`${order.receivedQty || 0} من أصل ${order.totalQty || '—'}`} />
+          )}
           {order.notes && <DetailRow label="ملاحظات" value={order.notes} multiline />}
         </div>
 
@@ -2309,7 +2364,11 @@ function escapeHtml(str) {
 
 function getReportValue(order, key) {
   if (key === 'poStatus') return order.poIssued ? 'صدر أمر الشراء' : 'لم يصدر بعد';
-  if (key === 'receivedStatus') return order.received ? 'تم الاستلام' : 'لم يُستلم بعد';
+  if (key === 'receivedStatus') {
+    const status = getReceivedStatus(order);
+    if (status === 'partial') return `استلام جزئي (${order.receivedQty || 0}/${order.totalQty || '—'})`;
+    return status === 'yes' ? 'تم الاستلام' : 'لم يُستلم بعد';
+  }
   return order[key] || '';
 }
 
@@ -2328,7 +2387,13 @@ function printOrderDetails(order) {
     rows.push(['تاريخ صدور أمر الشراء', order.poDate || '—']);
     rows.push(['رقم أمر الشراء', order.poNumber || '—']);
   }
-  rows.push(['حالة الاستلام', order.received ? 'تم الاستلام' : 'لم يُستلم بعد']);
+  {
+    const status = getReceivedStatus(order);
+    const label = status === 'partial'
+      ? `استلام جزئي (${order.receivedQty || 0} من أصل ${order.totalQty || '—'})`
+      : status === 'yes' ? 'تم الاستلام' : 'لم يُستلم بعد';
+    rows.push(['حالة الاستلام', label]);
+  }
   if (order.notes) rows.push(['ملاحظات', order.notes]);
 
   const rowsHtml = rows
@@ -2625,7 +2690,9 @@ function orderToRow(o) {
     po_issued: !!o.poIssued,
     po_date: o.poDate || '',
     po_number: o.poNumber || '',
-    received: !!o.received,
+    received_status: o.receivedStatus || (o.received ? 'yes' : 'no'),
+    received_qty: o.receivedQty === '' || o.receivedQty == null ? null : Number(o.receivedQty),
+    total_qty: o.totalQty === '' || o.totalQty == null ? null : Number(o.totalQty),
     notes: o.notes || '',
     attachments: o.attachments || [],
     created_at: o.createdAt || Date.now(),
@@ -2645,7 +2712,9 @@ function rowToOrder(r) {
     poIssued: !!r.po_issued,
     poDate: r.po_date || '',
     poNumber: r.po_number || '',
-    received: !!r.received,
+    receivedStatus: r.received_status || 'no',
+    receivedQty: r.received_qty == null ? '' : r.received_qty,
+    totalQty: r.total_qty == null ? '' : r.total_qty,
     notes: r.notes || '',
     attachments: r.attachments || [],
     createdAt: r.created_at,
