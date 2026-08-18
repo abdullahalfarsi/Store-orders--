@@ -1446,6 +1446,9 @@ function OrderRow({ order, index, highlighted, canEdit, canDelete, onView, onEdi
         <button onClick={onView} style={{ color: TEXT_MUTED }} className="p-2 rounded-lg hover:bg-white/10" aria-label="عرض التفاصيل">
           <Eye size={15} />
         </button>
+        <button onClick={() => printOrderDetails(order)} style={{ color: TEXT_MUTED }} className="p-2 rounded-lg hover:bg-white/10" aria-label="طباعة" title="طباعة">
+          <Printer size={15} />
+        </button>
         {canEdit && (
           <button onClick={onEdit} style={{ color: TEXT_MUTED }} className="p-2 rounded-lg hover:bg-white/10" aria-label="تعديل">
             <Pencil size={15} />
@@ -1714,9 +1717,20 @@ function OrderDetailModal({ order, canEdit, canDelete, onClose, onEdit, onDelete
           <h2 style={{ fontFamily: "'Cairo', sans-serif", color: TEXT }} className="font-bold text-lg">
             طلب رقم {order.orderNumber}
           </h2>
-          <button onClick={onClose} style={{ color: TEXT_MUTED }} aria-label="إغلاق">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => printOrderDetails(order)}
+              style={{ color: TEXT_MUTED }}
+              className="p-1.5 rounded-lg hover:bg-white/10"
+              aria-label="طباعة تفاصيل الطلب"
+              title="طباعة"
+            >
+              <Printer size={18} />
+            </button>
+            <button onClick={onClose} style={{ color: TEXT_MUTED }} aria-label="إغلاق">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap mb-4">
@@ -2287,6 +2301,75 @@ function getReportValue(order, key) {
   if (key === 'poStatus') return order.poIssued ? 'صدر أمر الشراء' : 'لم يصدر بعد';
   if (key === 'receivedStatus') return order.received ? 'تم الاستلام' : 'لم يُستلم بعد';
   return order[key] || '';
+}
+
+function printOrderDetails(order) {
+  const rows = [
+    ['رقم الطلب', order.orderNumber],
+    ['الجهة التابعة لها', order.department],
+    ['القسم', order.category],
+    ['مُقدم الطلب', order.requestedBy || '—'],
+    ['تم إنشاء الطلب وفق', order.createdPer || '—'],
+    ['الشركة المورّدة', order.supplier || '—'],
+    ['تاريخ الطلب', order.orderDate],
+    ['حالة أمر الشراء', order.poIssued ? 'صدر أمر الشراء' : 'لم يصدر بعد'],
+  ];
+  if (order.poIssued) {
+    rows.push(['تاريخ صدور أمر الشراء', order.poDate || '—']);
+    rows.push(['رقم أمر الشراء', order.poNumber || '—']);
+  }
+  rows.push(['حالة الاستلام', order.received ? 'تم الاستلام' : 'لم يُستلم بعد']);
+  if (order.notes) rows.push(['ملاحظات', order.notes]);
+
+  const rowsHtml = rows
+    .map(([label, value]) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`)
+    .join('');
+
+  const attachments = order.attachments || [];
+  const attachmentsHtml = attachments.length
+    ? '<ul>' + attachments.map(a => `<li>${escapeHtml(a.name)}</li>`).join('') + '</ul>'
+    : '<p style="color:#888;">لا توجد مرفقات</p>';
+
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8" />
+<title>طلب رقم ${escapeHtml(order.orderNumber)}</title>
+<style>
+  body { font-family: 'Tajawal', Tahoma, sans-serif; color: #1a1a1a; padding: 28px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: #555; margin: 0 0 18px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; font-size: 13px; text-align: right; vertical-align: top; }
+  th { background: #eef1f5; width: 190px; font-weight: 700; }
+  h2 { font-size: 14px; margin-bottom: 8px; }
+  ul { margin: 0; padding-right: 18px; font-size: 13px; }
+  .toolbar { margin-bottom: 16px; }
+  .toolbar button {
+    background: #1a2b45; color: #fff; border: none; padding: 8px 18px;
+    border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  @media print { .toolbar { display: none; } body { padding: 8px; } }
+</style>
+</head>
+<body>
+  <div class="toolbar"><button onclick="window.print()">طباعة / حفظ PDF</button></div>
+  <h1>الإدارة العامة لتقنية المعلومات</h1>
+  <p class="sub">قسم المخازن الفنية — تفاصيل الطلب</p>
+  <table><tbody>${rowsHtml}</tbody></table>
+  <h2>المرفقات</h2>
+  ${attachmentsHtml}
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('تعذّر فتح نافذة الطباعة — تأكد إن المتصفح ما يمنع النوافذ المنبثقة لهذا الموقع');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 function ReportsModal({ orders, onClose }) {
