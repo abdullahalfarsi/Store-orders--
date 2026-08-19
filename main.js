@@ -2417,36 +2417,34 @@ function printOrderDetails(order) {
   html, body { margin: 0; }
   body {
     font-family: 'Tajawal', Tahoma, sans-serif;
-    color: ${TEXT};
+    color: #1a1a1a;
+    background: #ffffff;
     padding: 32px;
     min-height: 100vh;
-    background-image: linear-gradient(180deg, rgba(4,8,14,0.55) 0%, rgba(4,8,14,0.8) 45%, rgba(4,8,14,0.94) 100%), url('${BG_IMAGE}');
-    background-size: cover;
-    background-position: center 35%;
-    background-attachment: fixed;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   h1 { font-family: 'Cairo', sans-serif; font-size: 21px; margin: 0 0 4px; font-weight: 800; }
-  .sub { font-size: 13px; color: ${TEXT_MUTED}; margin: 0 0 22px; }
-  .muted { color: ${TEXT_MUTED}; font-size: 13px; }
+  .sub { font-size: 13px; color: #555; margin: 0 0 22px; }
+  .muted { color: #888; font-size: 13px; }
   table {
-    width: 100%; border-collapse: separate; border-spacing: 0;
-    margin-bottom: 26px; border-radius: 14px; overflow: hidden;
-    background: rgba(17,24,35,0.6); border: 1px solid rgba(255,255,255,0.10);
+    width: 100%; border-collapse: collapse;
+    margin-bottom: 26px;
   }
-  th, td { padding: 11px 14px; font-size: 13.5px; text-align: right; vertical-align: top; }
-  tr:not(:last-child) th, tr:not(:last-child) td { border-bottom: 1px solid rgba(255,255,255,0.08); }
-  th { background: rgba(87,182,255,0.14); color: ${ACCENT}; width: 200px; font-weight: 700; }
-  td { color: ${TEXT}; }
-  h2 { font-family: 'Cairo', sans-serif; font-size: 15px; margin-bottom: 10px; color: ${TEXT}; }
-  ul { margin: 0; padding-right: 20px; font-size: 13px; color: ${TEXT}; }
+  th, td { border: 1px solid #ccc; padding: 10px 14px; font-size: 13.5px; text-align: right; vertical-align: top; }
+  th { background: #f2f2f2; width: 200px; font-weight: 700; color: #1a1a1a; }
+  td { color: #1a1a1a; }
+  h2 { font-family: 'Cairo', sans-serif; font-size: 15px; margin-bottom: 10px; color: #1a1a1a; }
+  ul { margin: 0; padding-right: 20px; font-size: 13px; color: #1a1a1a; }
   li { margin-bottom: 4px; }
   .toolbar { margin-bottom: 20px; }
   .toolbar button {
-    background: ${ACCENT}; color: ${ACCENT_TEXT_ON}; border: none; padding: 9px 20px;
+    background: #1a2b45; color: #fff; border: none; padding: 9px 20px;
     border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
-    box-shadow: 0 0 18px rgba(87,182,255,0.4);
+  }
+  .signature-wrap { text-align: center; margin-top: 90px; }
+  .signature {
+    display: inline-block; padding-top: 10px; border-top: 1px solid #888;
+    font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 14px; color: #1a1a1a;
+    padding-left: 36px; padding-right: 36px;
   }
   @media print { .toolbar { display: none; } body { padding: 10px; } }
 </style>
@@ -2458,6 +2456,7 @@ function printOrderDetails(order) {
   <table><tbody>${rowsHtml}</tbody></table>
   <h2>المرفقات</h2>
   ${attachmentsHtml}
+  <div class="signature-wrap"><span class="signature">قسم المخازن الفنية</span></div>
 </body>
 </html>`;
 
@@ -2533,39 +2532,35 @@ function ReportsModal({ orders, onClose }) {
   html, body { margin: 0; }
   body {
     font-family: 'Tajawal', Tahoma, sans-serif;
-    color: ${TEXT};
+    color: #1a1a1a;
+    background: #ffffff;
     padding: 32px;
     min-height: 100vh;
-    background-image: linear-gradient(180deg, rgba(4,8,14,0.55) 0%, rgba(4,8,14,0.8) 45%, rgba(4,8,14,0.94) 100%), url('${BG_IMAGE}');
-    background-size: cover;
-    background-position: center 35%;
-    background-attachment: fixed;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   h1 { font-family: 'Cairo', sans-serif; font-size: 21px; margin: 0 0 4px; font-weight: 800; }
-  .sub { font-size: 13px; color: ${TEXT_MUTED}; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #555; margin: 0 0 4px; }
   .meta {
-    display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 12.5px; color: ${TEXT_MUTED};
-    margin: 14px 0 20px; background: rgba(17,24,35,0.5); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 12.5px; color: #555;
+    margin: 14px 0 20px; background: #f5f5f5; border: 1px solid #ddd;
     border-radius: 10px; padding: 10px 14px;
   }
-  .meta b { color: ${TEXT}; }
-  table {
-    width: 100%; border-collapse: separate; border-spacing: 0;
-    border-radius: 14px; overflow: hidden;
-    background: rgba(17,24,35,0.6); border: 1px solid rgba(255,255,255,0.10);
-  }
-  th, td { padding: 9px 12px; font-size: 12px; text-align: right; vertical-align: top; }
-  th { background: rgba(87,182,255,0.16); color: ${ACCENT}; font-weight: 700; }
-  td { border-top: 1px solid rgba(255,255,255,0.08); color: ${TEXT}; }
-  tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
-  .empty { text-align: center; color: ${TEXT_MUTED}; padding: 20px !important; }
+  .meta b { color: #1a1a1a; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; font-size: 12px; text-align: right; vertical-align: top; }
+  th { background: #f2f2f2; font-weight: 700; color: #1a1a1a; }
+  td { color: #1a1a1a; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .empty { text-align: center; color: #888; padding: 20px !important; }
   .toolbar { margin-bottom: 18px; }
   .toolbar button {
-    background: ${ACCENT}; color: ${ACCENT_TEXT_ON}; border: none; padding: 9px 20px;
+    background: #1a2b45; color: #fff; border: none; padding: 9px 20px;
     border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
-    box-shadow: 0 0 18px rgba(87,182,255,0.4);
+  }
+  .signature-wrap { text-align: center; margin-top: 90px; }
+  .signature {
+    display: inline-block; padding-top: 10px; border-top: 1px solid #888;
+    font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 14px; color: #1a1a1a;
+    padding-left: 36px; padding-right: 36px;
   }
   @media print { .toolbar { display: none; } body { padding: 10px; } }
 </style>
@@ -2584,6 +2579,7 @@ function ReportsModal({ orders, onClose }) {
     <thead><tr>${headHtml}</tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
+  <div class="signature-wrap"><span class="signature">قسم المخازن الفنية</span></div>
 </body>
 </html>`;
 
