@@ -117,6 +117,17 @@ async function getAdminPasswordHash() {
   return DEFAULT_ADMIN_PASSWORD_HASH;
 }
 
+const COUNTRIES = [
+  { code: 'OM', name: 'سلطنة عُمان', dial: '968', flag: '🇴🇲' },
+  { code: 'SA', name: 'السعودية', dial: '966', flag: '🇸🇦' },
+  { code: 'AE', name: 'الإمارات', dial: '971', flag: '🇦🇪' },
+  { code: 'KW', name: 'الكويت', dial: '965', flag: '🇰🇼' },
+  { code: 'QA', name: 'قطر', dial: '974', flag: '🇶🇦' },
+  { code: 'BH', name: 'البحرين', dial: '973', flag: '🇧🇭' },
+  { code: 'EG', name: 'مصر', dial: '20', flag: '🇪🇬' },
+  { code: 'JO', name: 'الأردن', dial: '962', flag: '🇯🇴' },
+];
+
 const PERMISSION_DEFS = [
   { key: 'canAdd', label: 'إضافة طلبات جديدة' },
   { key: 'canEdit', label: 'تعديل الطلبات' },
@@ -2579,6 +2590,7 @@ function printOrderDetails(order) {
 }
 
 function RemindersModal({ number, reminders, onSubmitNumber, onLogout, onAdd, onDelete, onClose }) {
+  const [countryCode, setCountryCode] = useState('OM');
   const [numberInput, setNumberInput] = useState('');
   const [form, setForm] = useState({ text: '', date: '', time: '' });
   const [error, setError] = useState('');
@@ -2589,12 +2601,19 @@ function RemindersModal({ number, reminders, onSubmitNumber, onLogout, onAdd, on
 
   function handleNumberSubmit(e) {
     e.preventDefault();
-    if (!numberInput.trim()) {
-      setError('اكتب رقمك أول');
+    const country = COUNTRIES.find(c => c.code === countryCode) || COUNTRIES[0];
+    const localDigits = numberInput.trim().replace(/\D/g, '').replace(/^0+/, '');
+    if (!localDigits) {
+      setError('اكتب رقم جوالك أول');
       return;
     }
+    if (localDigits.length < 6 || localDigits.length > 12) {
+      setError('تأكد إن الرقم صحيح');
+      return;
+    }
+    const normalized = `+${country.dial}${localDigits}`;
     setError('');
-    onSubmitNumber(numberInput);
+    onSubmitNumber(normalized);
     setNumberInput('');
     setTimeout(() => {
       if (typeof Notification !== 'undefined') setNotifStatus(Notification.permission);
@@ -2644,16 +2663,34 @@ function RemindersModal({ number, reminders, onSubmitNumber, onLogout, onAdd, on
         {!number ? (
           <>
             <p style={{ color: TEXT_MUTED }} className="text-xs mt-3 mb-4">
-              أدخل رقمك عشان تحفظ تذكيراتك وترجع لها في أي وقت من هذا الجهاز.
+              اختر دولتك واكتب رقم جوالك عشان توصلك التذكيرات على واتساب، وتقدر ترجع لها من أي جهاز بنفس الرقم.
             </p>
             <form onSubmit={handleNumberSubmit} className="flex flex-col gap-2">
-              <input
-                value={numberInput}
-                onChange={e => setNumberInput(e.target.value)}
-                placeholder="اكتب رقمك"
-                style={inputStyle}
-                className="w-full rounded-lg px-3 py-2 text-sm"
-              />
+              <div className="flex gap-2" dir="ltr">
+                <select
+                  value={countryCode}
+                  onChange={e => setCountryCode(e.target.value)}
+                  style={{ ...inputStyle, flexShrink: 0, width: 132 }}
+                  className="rounded-lg px-2 py-2 text-sm"
+                >
+                  {COUNTRIES.map(c => (
+                    <option key={c.code} value={c.code}>
+                      {c.flag} +{c.dial}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={numberInput}
+                  onChange={e => setNumberInput(e.target.value)}
+                  placeholder="912345678"
+                  dir="ltr"
+                  style={{ ...inputStyle, textAlign: 'left' }}
+                  className="flex-1 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <p style={{ color: TEXT_FAINT }} className="text-xs">
+                بدون الصفر بالأول، فقط الرقم بعد رمز الدولة
+              </p>
               {error && (
                 <p style={{ color: REQUIRED_RED }} className="text-xs">
                   {error}
@@ -2672,7 +2709,7 @@ function RemindersModal({ number, reminders, onSubmitNumber, onLogout, onAdd, on
           <>
             <div className="flex items-center justify-between mt-2 mb-4">
               <span style={{ color: TEXT_MUTED }} className="text-xs">
-                رقمك: <b style={{ color: TEXT }}>{number}</b>
+                رقمك: <b dir="ltr" style={{ color: TEXT, unicodeBidi: 'embed' }}>{number}</b>
               </span>
               <button onClick={onLogout} style={{ color: TEXT_MUTED }} className="text-xs underline">
                 تغيير الرقم
