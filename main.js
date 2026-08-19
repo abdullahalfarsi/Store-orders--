@@ -2403,7 +2403,7 @@ function printOrderDetails(order) {
   const attachments = order.attachments || [];
   const attachmentsHtml = attachments.length
     ? '<ul>' + attachments.map(a => `<li>${escapeHtml(a.name)}</li>`).join('') + '</ul>'
-    : '<p style="color:#888;">لا توجد مرفقات</p>';
+    : '<p class="muted">لا توجد مرفقات</p>';
 
   const html = `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -2411,20 +2411,44 @@ function printOrderDetails(order) {
 <meta charset="UTF-8" />
 <title>طلب رقم ${escapeHtml(order.orderNumber)}</title>
 <style>
-  body { font-family: 'Tajawal', Tahoma, sans-serif; color: #1a1a1a; padding: 28px; }
-  h1 { font-size: 19px; margin: 0 0 4px; }
-  .sub { font-size: 12px; color: #555; margin: 0 0 18px; }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
-  th, td { border: 1px solid #ccc; padding: 8px 10px; font-size: 13px; text-align: right; vertical-align: top; }
-  th { background: #eef1f5; width: 190px; font-weight: 700; }
-  h2 { font-size: 14px; margin-bottom: 8px; }
-  ul { margin: 0; padding-right: 18px; font-size: 13px; }
-  .toolbar { margin-bottom: 16px; }
-  .toolbar button {
-    background: #1a2b45; color: #fff; border: none; padding: 8px 18px;
-    border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=Tajawal:wght@400;500;700&display=swap');
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: 'Tajawal', Tahoma, sans-serif;
+    color: ${TEXT};
+    padding: 32px;
+    min-height: 100vh;
+    background-image: linear-gradient(180deg, rgba(4,8,14,0.55) 0%, rgba(4,8,14,0.8) 45%, rgba(4,8,14,0.94) 100%), url('${BG_IMAGE}');
+    background-size: cover;
+    background-position: center 35%;
+    background-attachment: fixed;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  @media print { .toolbar { display: none; } body { padding: 8px; } }
+  h1 { font-family: 'Cairo', sans-serif; font-size: 21px; margin: 0 0 4px; font-weight: 800; }
+  .sub { font-size: 13px; color: ${TEXT_MUTED}; margin: 0 0 22px; }
+  .muted { color: ${TEXT_MUTED}; font-size: 13px; }
+  table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    margin-bottom: 26px; border-radius: 14px; overflow: hidden;
+    background: rgba(17,24,35,0.6); border: 1px solid rgba(255,255,255,0.10);
+  }
+  th, td { padding: 11px 14px; font-size: 13.5px; text-align: right; vertical-align: top; }
+  tr:not(:last-child) th, tr:not(:last-child) td { border-bottom: 1px solid rgba(255,255,255,0.08); }
+  th { background: rgba(87,182,255,0.14); color: ${ACCENT}; width: 200px; font-weight: 700; }
+  td { color: ${TEXT}; }
+  h2 { font-family: 'Cairo', sans-serif; font-size: 15px; margin-bottom: 10px; color: ${TEXT}; }
+  ul { margin: 0; padding-right: 20px; font-size: 13px; color: ${TEXT}; }
+  li { margin-bottom: 4px; }
+  .toolbar { margin-bottom: 20px; }
+  .toolbar button {
+    background: ${ACCENT}; color: ${ACCENT_TEXT_ON}; border: none; padding: 9px 20px;
+    border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 0 18px rgba(87,182,255,0.4);
+  }
+  @media print { .toolbar { display: none; } body { padding: 10px; } }
 </style>
 </head>
 <body>
@@ -2492,7 +2516,7 @@ function ReportsModal({ orders, onClose }) {
               '</tr>'
           )
           .join('')
-      : `<tr><td colspan="${cols.length}" style="text-align:center;color:#888;">لا توجد نتائج مطابقة</td></tr>`;
+      : `<tr><td colspan="${cols.length}" class="empty">لا توجد نتائج مطابقة</td></tr>`;
 
     const categoryLabel = category === 'all' ? 'كل الأقسام' : category;
     const statusLabel = status === 'all' ? 'كل الحالات' : status === 'issued' ? 'صدر أمر الشراء' : 'لم يصدر بعد';
@@ -2503,20 +2527,47 @@ function ReportsModal({ orders, onClose }) {
 <meta charset="UTF-8" />
 <title>تقرير الطلبات</title>
 <style>
-  body { font-family: 'Tajawal', Tahoma, sans-serif; color: #1a1a1a; padding: 28px; }
-  h1 { font-size: 19px; margin: 0 0 4px; }
-  .sub { font-size: 12px; color: #555; margin: 0 0 2px; }
-  .meta { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #555; margin: 10px 0 16px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 11.5px; text-align: right; vertical-align: top; }
-  th { background: #eef1f5; font-weight: 700; }
-  tr:nth-child(even) td { background: #fafafa; }
-  .toolbar { margin-bottom: 14px; }
-  .toolbar button {
-    background: #1a2b45; color: #fff; border: none; padding: 8px 18px;
-    border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=Tajawal:wght@400;500;700&display=swap');
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: 'Tajawal', Tahoma, sans-serif;
+    color: ${TEXT};
+    padding: 32px;
+    min-height: 100vh;
+    background-image: linear-gradient(180deg, rgba(4,8,14,0.55) 0%, rgba(4,8,14,0.8) 45%, rgba(4,8,14,0.94) 100%), url('${BG_IMAGE}');
+    background-size: cover;
+    background-position: center 35%;
+    background-attachment: fixed;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
-  @media print { .toolbar { display: none; } body { padding: 8px; } }
+  h1 { font-family: 'Cairo', sans-serif; font-size: 21px; margin: 0 0 4px; font-weight: 800; }
+  .sub { font-size: 13px; color: ${TEXT_MUTED}; margin: 0 0 4px; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 12.5px; color: ${TEXT_MUTED};
+    margin: 14px 0 20px; background: rgba(17,24,35,0.5); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px; padding: 10px 14px;
+  }
+  .meta b { color: ${TEXT}; }
+  table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    border-radius: 14px; overflow: hidden;
+    background: rgba(17,24,35,0.6); border: 1px solid rgba(255,255,255,0.10);
+  }
+  th, td { padding: 9px 12px; font-size: 12px; text-align: right; vertical-align: top; }
+  th { background: rgba(87,182,255,0.16); color: ${ACCENT}; font-weight: 700; }
+  td { border-top: 1px solid rgba(255,255,255,0.08); color: ${TEXT}; }
+  tr:nth-child(even) td { background: rgba(255,255,255,0.03); }
+  .empty { text-align: center; color: ${TEXT_MUTED}; padding: 20px !important; }
+  .toolbar { margin-bottom: 18px; }
+  .toolbar button {
+    background: ${ACCENT}; color: ${ACCENT_TEXT_ON}; border: none; padding: 9px 20px;
+    border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 0 18px rgba(87,182,255,0.4);
+  }
+  @media print { .toolbar { display: none; } body { padding: 10px; } }
 </style>
 </head>
 <body>
@@ -2524,10 +2575,10 @@ function ReportsModal({ orders, onClose }) {
   <h1>الإدارة العامة لتقنية المعلومات</h1>
   <p class="sub">قسم المخازن الفنية — تقرير الطلبات</p>
   <div class="meta">
-    <span>الفترة: ${escapeHtml(dateFrom || 'بدون تحديد')} إلى ${escapeHtml(dateTo || 'بدون تحديد')}</span>
-    <span>القسم: ${escapeHtml(categoryLabel)}</span>
-    <span>الحالة: ${escapeHtml(statusLabel)}</span>
-    <span>عدد الطلبات: ${filtered.length}</span>
+    <span>الفترة: <b>${escapeHtml(dateFrom || 'بدون تحديد')}</b> إلى <b>${escapeHtml(dateTo || 'بدون تحديد')}</b></span>
+    <span>القسم: <b>${escapeHtml(categoryLabel)}</b></span>
+    <span>الحالة: <b>${escapeHtml(statusLabel)}</b></span>
+    <span>عدد الطلبات: <b>${filtered.length}</b></span>
   </div>
   <table>
     <thead><tr>${headHtml}</tr></thead>
